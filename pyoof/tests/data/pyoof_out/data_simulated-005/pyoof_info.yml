@@ -1,0 +1,21 @@
+# pyoof relevant information
+box_factor: 5
+d_z:
+- -0.022
+- 0.0
+- 0.022
+fft_resolution: 256
+frequency: 32000000000.0
+illumination: illum_parabolic
+meanel: 0.0
+name: data_simulated
+obs_date: test000
+obs_object: test000
+pr: 50.0
+snr:
+- 149.86
+- 15563.03
+- 235.74
+tel_name: effelsberg
+tel_opd: opd_effelsberg
+wavel: 0.0093685143125

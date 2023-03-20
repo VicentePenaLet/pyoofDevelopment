@@ -110,7 +110,7 @@ To use the pyoof package is straight forward. First define your observational da
 
     # Effelsberg telescope definition
     effelsberg_telescope = [
-        pyoof.telgeometry.block_effelsberg,  # blockage distribution
+        pyoof.telgeometry.block_effelsberg(),  # blockage distribution
         pyoof.telgeometry.opd_effelsberg,    # OPD function
         50. * u.m,                           # primary reflector radius
         'effelsberg'                         # telescope name

@@ -230,8 +230,11 @@ def store_data_csv(name, name_dir, order, save_to_csv):
         headers = headers[3:]
         fnames = fnames[3:]
         save_to_csv = save_to_csv[3:]
-
     for fname, header, file in zip(fnames, headers, save_to_csv):
+        print(fname)
+        print(name_dir)
+        name_dir = name_dir.replace("//", "/")
+        print(os.path.join(name_dir, fname))
         np.savetxt(
             fname=os.path.join(name_dir, fname),
             X=file,

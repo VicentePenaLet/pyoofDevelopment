@@ -10,12 +10,25 @@ from astropy.constants import c as light_speed
 from astropy.io import fits
 from .aperture import radiation_pattern
 
-__all__ = ['simulate_data_pyoof']
+__all__ = ['simulate_data_pyoof', "simulate_data_pyoof_multifreq"]
 
+def simulate_data_pyoof_multifreq( I_coeff, K_coeff, wavel_array, d_z, illum_func, telgeo, noise, resolution,
+    box_factor, work_dir=None):
+    if work_dir is None:
+        work_dir = os.getcwd()
+
+    fits_files = []
+    fits_paths = []
+    for wavel in wavel_array:
+        fits_names = "fits_wavel_{}".format(wavel)
+        fits_files.append(simulate_data_pyoof(I_coeff, K_coeff, wavel, d_z, illum_func, telgeo, noise, resolution, box_factor, fits_name = fits_names))
+        name_file = os.path.join(work_dir, 'data_generated', fits_names + '.fits')
+        fits_paths.append(name_file)
+    return fits_files, fits_paths
 
 def simulate_data_pyoof(
     I_coeff, K_coeff, wavel, d_z, illum_func, telgeo, noise, resolution,
-    box_factor, work_dir=None
+    box_factor, work_dir=None, fits_name = "test"
         ):
     """
     Routine to generate data and test the pyoof package algorithm. It has the
@@ -83,6 +96,7 @@ def simulate_data_pyoof(
         If the known a priori radial offset ``d_z`` is different than:
         ``[d_z-, 0., d_z+]``, negative, zero, and positive float.
     """
+    print("development build")
 
     if (d_z[0] > 0) or (d_z[1] != 0) or (d_z[2] < 0):
         raise ValueError(
@@ -127,6 +141,7 @@ def simulate_data_pyoof(
 
         power_trim_1d = power_pattern[~np.isnan(power_pattern)]
         size_trim = int(np.sqrt(power_trim_1d.size))  # new size of the box
+
 
         # Box to be trimmed in uu and vv meshed arrays
         box = (
@@ -178,33 +193,29 @@ def simulate_data_pyoof(
     # storing data
     if not os.path.exists(os.path.join(work_dir, 'data_generated')):
         os.makedirs(os.path.join(work_dir, 'data_generated'))
+    
+    name_file = os.path.join(work_dir, 'data_generated', fits_name + '.fits')
 
-    for j in ["%03d" % i for i in range(101)]:
-        name_file = os.path.join(work_dir, 'data_generated', f'test{j}.fits')
-        if not os.path.exists(name_file):
+    prihdr = fits.Header()
+    prihdr['FREQ'] = freq.to_value(apu.Hz)
+    prihdr['WAVEL'] = wavel.to_value(apu.m)
+    prihdr['MEANEL'] = 0
+    prihdr['OBJECT'] = name_file
+    prihdr['DATE_OBS'] = Time.now().isot
+    prihdr['COMMENT'] = 'Generated data pyoof package'
+    prihdr['AUTHOR'] = 'Tomas Cassanelli'
+    prihdu = fits.PrimaryHDU(header=prihdr)
+    pyoof_fits = fits.HDUList(
+        [prihdu, table_hdu0, table_hdu1, table_hdu2]
+        )
 
-            prihdr = fits.Header()
-            prihdr['FREQ'] = freq.to_value(apu.Hz)
-            prihdr['WAVEL'] = wavel.to_value(apu.m)
-            prihdr['MEANEL'] = 0
-            prihdr['OBJECT'] = f'test{j}'
-            prihdr['DATE_OBS'] = Time.now().isot
-            prihdr['COMMENT'] = 'Generated data pyoof package'
-            prihdr['AUTHOR'] = 'Tomas Cassanelli'
-            prihdu = fits.PrimaryHDU(header=prihdr)
-            pyoof_fits = fits.HDUList(
-                [prihdu, table_hdu0, table_hdu1, table_hdu2]
-                )
+    for i in range(3):
+        pyoof_fits[i + 1].header['DZ'] = d_z[i].to_value(apu.m)
 
-            for i in range(3):
-                pyoof_fits[i + 1].header['DZ'] = d_z[i].to_value(apu.m)
+    pyoof_fits[1].name = 'MINUS OOF'
+    pyoof_fits[2].name = 'ZERO OOF'
+    pyoof_fits[3].name = 'PLUS OOF'
 
-            pyoof_fits[1].name = 'MINUS OOF'
-            pyoof_fits[2].name = 'ZERO OOF'
-            pyoof_fits[3].name = 'PLUS OOF'
-
-            pyoof_fits.writeto(name_file)
-
-            break
+    pyoof_fits.writeto(name_file)
 
     return pyoof_fits

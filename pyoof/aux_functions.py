@@ -14,9 +14,20 @@ from .math_functions import rms
 from .aperture import e_rs, phase
 
 __all__ = [
-    'extract_data_pyoof', 'extract_data_effelsberg', 'str2LaTeX',
+    "extract_data_multifrequency", 'extract_data_pyoof', 'extract_data_effelsberg', 'str2LaTeX',
     'store_data_csv', 'uv_ratio', 'store_data_ascii', 'table_pyoof_out'
     ]
+def extract_data_multifrequency(fits_paths):
+    data_dict = {}
+    for fits_path  in fits_paths:
+        data = extract_data_pyoof(fits_path)
+        wavel = data["wavel"]
+        data_dict["wavel: {}".format(wavel)] = data
+        data_dict["pthto"] = data["pthto"]
+    return data_dict
+
+
+
 
 
 def extract_data_pyoof(pathfits):
@@ -94,7 +105,19 @@ def extract_data_pyoof(pathfits):
     data_info = data_file + [obs_object, obs_date, freq, wavel, d_z, meanel]
     data_obs = [beam_data, u_data, v_data]
 
-    return data_info, data_obs
+    data= {"name": name, 
+            "pthto": pthto, 
+            "obs_object": obs_object, 
+            "obs_date": obs_date, 
+            "freq": freq, 
+            "wavel": wavel, 
+            "d_z": d_z, 
+            "meanel": meanel,
+            "beam_data": beam_data,
+            "u_data": u_data,
+            "v_data": v_data}
+
+    return data
 
 
 def extract_data_effelsberg(pathfits):
@@ -160,7 +183,19 @@ def extract_data_effelsberg(pathfits):
     data_info = [name, pthto, obs_object, obs_date, freq, wavel, d_z, meanel]
     data_obs = [beam_data, u_data, v_data]
 
-    return data_info, data_obs
+    data= {"name": name, 
+            "pthto": pthto, 
+            "obs_object": obs_object, 
+            "obs_date": obs_date, 
+            "freq": freq, 
+            "wavel": wavel, 
+            "d_z": d_z, 
+            "meanel": meanel,
+            "beam_data": beam_data,
+            "u_data": u_data,
+            "v_data": v_data}
+
+    return data
 
 
 def str2LaTeX(python_string):

@@ -18,7 +18,7 @@ from .math_functions import norm
 
 __all__ = [
     'plot_beam', 'plot_beam_data', 'plot_phase', 'plot_phase_data',
-    'plot_variance', 'plot_fit_path'
+    'plot_variance', 'plot_fit_path', "plot_beam_data_multifrequency"
     ]
 
 
@@ -196,7 +196,20 @@ def plot_beam(
 
     return fig
 
+def plot_beam_data_multifrequency(data, resolution, angle, title, res_mode):
+    figs = []
 
+    for key in data:
+        if key != "pthto":      
+            u_data = data[key]["u_data"]
+            v_data = data[key]["v_data"]
+            beam_data = data[key]["beam_data"]
+            d_z = data[key]["d_z"]
+            wavel = data[key]["wavel"]
+            fig = plot_beam_data(u_data, v_data, beam_data, d_z, resolution, angle, title + " wavel: {}".format(wavel), res_mode)
+            figs.append(fig)
+
+    return figs
 def plot_beam_data(
     u_data, v_data, beam_data, d_z, resolution, angle, title, res_mode
         ):

@@ -25,12 +25,13 @@ def residual_true_multifrequency(params, data, illum_func, telgeo, resolution, b
         if key != "pthto":
             current = data[key]
             I_coeff, K_coeff = params[:5], params[5:]
+            K_coeff = K_coeff * apu.m
             beam_model = np.zeros_like(current["beam_data"])
             wavel = current["wavel"]
             d_z = current["d_z"]
             u_data = current["u_data"]
             v_data = current["v_data"]
-            for i in range(3):
+            for i in range(len(d_z)):
                 u, v, F = radiation_pattern(
                     I_coeff=I_coeff,
                     K_coeff=K_coeff,
@@ -64,8 +65,11 @@ def residual_true_multifrequency(params, data, illum_func, telgeo, resolution, b
                     beam_model[i, ...] = power_pattern
 
             _residual_true = norm(current["beam_data"], axis=1) - norm(beam_model, axis=1)
-            residuals.append(_residual_true)
-    return np.stack(residuals).flatten()
+            residuals.append(_residual_true.flatten())
+            #residuals.append(norm(current["beam_data"] - beam_model, axis=1))
+    return np.concatenate(residuals)
+
+
 def residual_true(
     params, beam_data, u_data, v_data, d_z, wavel, illum_func, telgeo,
     resolution, box_factor, interp
@@ -138,7 +142,7 @@ def residual_true(
 
     I_coeff, K_coeff = params[:5], params[5:]
     beam_model = np.zeros_like(beam_data)
-    for i in range(3):
+    for i in range(len(d_z)):
         u, v, F = radiation_pattern(
             I_coeff=I_coeff,
             K_coeff=K_coeff,
@@ -339,6 +343,7 @@ def params_complete(params, N_K_coeff, config_params):
         i_amp_f, c_dB_f, q_f, x0_f, y0_f, Knl0_f, Knl1_f, Knl2_f
         ] = config_params['fixed']
 
+
     # N_K_coeff number of Zernike circle polynomials coefficients
     if params.size != (5 + N_K_coeff):
         params_updated = params.copy()
@@ -415,7 +420,7 @@ def multifrequency_zernike_fit(data, order_max, illum_func, telescope, resolutio
             meanel = current["meanel"]
             d_z = current["d_z"]
             signal_noise_ratio = []
-            for i in range(3):
+            for i in range(len(d_z)):
                 signal_noise_ratio.append(np.round(snr(beam_data[i, ...], u_data[i, ...], v_data[i, ...]), 2))
             print(f'Obs frequency: {freq.to(apu.GHz)}',
             f'Obs Wavelength: {wavel.to(apu.cm)}',
@@ -451,14 +456,14 @@ def multifrequency_zernike_fit(data, order_max, illum_func, telescope, resolutio
                 name_dir, f'fitpar_n{n - 1}.csv'
                 )
 
-            params_to_add = np.ones(N_K_coeff - N_K_coeff_previous) * 0.1
+            params_to_add = np.ones(N_K_coeff - N_K_coeff_previous) * 0.000001
             params_previous = Table.read(path_params_previous, format='ascii')
             params_init = np.hstack((params_previous['parfit'], params_to_add))
 
             if not verbose == 0:
                 print('Initial params: n={} fit'.format(n - 1))
         else:
-            params_init = config_params['init'] + [0.1] * (N_K_coeff - 3)
+            params_init = (config_params['init'] + [0.000001] * (N_K_coeff - 3))
             print('Initial parameters: default')
             # i_amp, c_dB, q, x0, y0, K(n, l)
             # Giving an initial value of 0.1 for each K_coeff
@@ -470,12 +475,13 @@ def multifrequency_zernike_fit(data, order_max, illum_func, telescope, resolutio
 
         params_init_true = np.delete(params_init, idx_exclude)
 
-        bound_min = config_params['bound_min'] + [-5] * (N_K_coeff - 3)
-        bound_max = config_params['bound_max'] + [5] * (N_K_coeff - 3)
+        bound_min = (config_params['bound_min'] + [-0.00005] * (N_K_coeff - 3))
+        bound_max = (config_params['bound_max'] + [0.00005] * (N_K_coeff - 3))
 
         bound_min_true = np.delete(bound_min, idx_exclude)
         bound_max_true = np.delete(bound_max, idx_exclude)
-
+        print(bound_max_true)
+        print(bound_min_true)
         if not verbose == 0:
             print('Parameters to fit: {}\n'.format(len(params_init_true)))
 
@@ -497,7 +503,8 @@ def multifrequency_zernike_fit(data, order_max, illum_func, telescope, resolutio
             method='trf',
             tr_solver='exact',
             verbose=verbose,
-            max_nfev=None
+            max_nfev=None,
+            xtol = 1e-12
             )
 
         # Solutions from least squared optimization
@@ -506,10 +513,9 @@ def multifrequency_zernike_fit(data, order_max, illum_func, telescope, resolutio
             N_K_coeff=N_K_coeff,
             config_params=config_params
             )
-        res_optim = res_lsq.fun.reshape(3, -1)  # Optimum residual solution
+        res_optim = res_lsq.fun  # Optimum residual solution
         jac_optim = res_lsq.jac                 # Last Jacobian matrix
         grad_optim = res_lsq.grad               # Last Gradient
-
         # covariance and correlation
         cov, cor = co_matrices(
             res=res_lsq.fun,
@@ -523,10 +529,11 @@ def multifrequency_zernike_fit(data, order_max, illum_func, telescope, resolutio
 
         # Final phase from fit in the telescope's primary reflector
         _phase = phase(
-            K_coeff=params_solution[5:],
+            K_coeff=params_solution[5:] * apu.m,
             pr=telgeo[2],
             piston=False,
-            tilt=False
+            tilt=False,
+            wavel = wavel
             )[2].to_value(apu.rad)
 
         # Storing files in directory
@@ -548,72 +555,77 @@ def multifrequency_zernike_fit(data, order_max, illum_func, telescope, resolutio
                 format='ascii'
                 ).pprint_all()
 
-        if n == 1:
-            # TODO: yaml doesn't like astropy :(
-            for key in data:
-                if key!= "pthto":
-                    current = data[key]
-                    signal_noise_ratio = []
-                    beam_data = current["beam_data"]
-                    u_data = current["u_data"]
-                    v_data = current["v_data"]
-                    for i in range(3):
-                        signal_noise_ratio.append(np.round(snr(beam_data[i, ...], u_data[i, ...], v_data[i, ...]), 2))
-                    pyoof_info = dict(
-                        tel_name=tel_name,
-                        tel_opd=telgeo[1].__qualname__,
-                        pr=float(telgeo[2].to_value(apu.m)),
-                        name=name,
-                        obs_object=current["obs_object"],
-                        obs_date=current["obs_date"],
-                        d_z=current["d_z"].to_value(apu.m).tolist(),
-                        wavel=float(current["wavel"].to_value(apu.m)),
-                        frequency=float(current["freq"].to_value(apu.Hz)),
-                        illumination=illum_func.__qualname__,
-                        meanel=float(current["meanel"].to_value(apu.deg)),
-                        fft_resolution=resolution,
-                        box_factor=box_factor,
-                        snr=list(float(signal_noise_ratio[i]) for i in range(3))
+        #if n == 1:
+        # TODO: yaml doesn't like astropy :(
+        j=0
+        for key in data:
+            if key!= "pthto":
+                current = data[key]
+                signal_noise_ratio = []
+                beam_data = current["beam_data"]
+                u_data = current["u_data"]
+                v_data = current["v_data"]
+                wavel_str = str(current["wavel"].to_value())
+                res= res_optim[len(d_z)*j*beam_data.shape[1]:(len(d_z)*(j+1)*beam_data.shape[1])].reshape(len(d_z), -1)
+                j+=1
+                for i in range(len(d_z)):
+                    signal_noise_ratio.append(np.round(snr(beam_data[i, ...], u_data[i, ...], v_data[i, ...]), 2))
+                pyoof_info = dict(
+                    tel_name=tel_name,
+                    tel_opd=telgeo[1].__qualname__,
+                    pr=float(telgeo[2].to_value(apu.m)),
+                    name=name,
+                    obs_object=current["obs_object"],
+                    obs_date=current["obs_date"],
+                    d_z=current["d_z"].to_value(apu.m).tolist(),
+                    wavel=float(current["wavel"].to_value(apu.m)),
+                    frequency=float(current["freq"].to_value(apu.Hz)),
+                    illumination=illum_func.__qualname__,
+                    meanel=float(current["meanel"].to_value(apu.deg)),
+                    fft_resolution=resolution,
+                    box_factor=box_factor,
+                    snr=list(float(signal_noise_ratio[i]) for i in range(3))
+                    )
+
+                with open(os.path.join(name_dir, 'pyoof_info.yml'), 'w') as outf:
+                    outf.write('# pyoof relevant information\n')
+                    yaml.dump(
+                        pyoof_info, outf,
+                        default_flow_style=False,
+                        Dumper=yaml.Dumper
+                        )
+                # To store large files in csv format
+                save_to_csv = [
+                    beam_data, u_data.to_value(apu.rad), v_data.to_value(apu.rad),
+                    res, jac_optim, grad_optim, _phase, cov_ptrue, cor_ptrue
+                    ]
+                store_data_csv(
+                    name=name,
+                    name_dir=name_dir,
+                    order=n,
+                    wavel=wavel_str,
+                    save_to_csv=save_to_csv
+                    )
+
+                if make_plots:
+                    if not verbose == 0:
+                        print('\n ... Making plots ...')
+                    # Making all relevant plots
+                    plot_fit_path(
+                        path_pyoof_out=name_dir,
+                        order=n,
+                        telgeo=telgeo,
+                        wavel=wavel_str,
+                        illum_func=illum_func,
+                        plim=plim,
+                        save=True,
+                        angle=apu.deg,
+                        i=key.split(" ")[1],
                         )
 
-            with open(os.path.join(name_dir, 'pyoof_info.yml'), 'w') as outf:
-                outf.write('# pyoof relevant information\n')
-                yaml.dump(
-                    pyoof_info, outf,
-                    default_flow_style=False,
-                    Dumper=yaml.Dumper
-                    )
-"""
-        # To store large files in csv format
-        save_to_csv = [
-            beam_data, u_data.to_value(apu.rad), v_data.to_value(apu.rad),
-            res_optim, jac_optim, grad_optim, _phase, cov_ptrue, cor_ptrue
-            ]
+                    plt.close('all')
+    return params_solution[5:]
 
-        store_data_csv(
-            name=name,
-            name_dir=name_dir,
-            order=n,
-            save_to_csv=save_to_csv
-            )
-
-        if make_plots:
-            if not verbose == 0:
-                print('\n ... Making plots ...')
-
-            # Making all relevant plots
-            plot_fit_path(
-                path_pyoof_out=name_dir,
-                order=n,
-                telgeo=telgeo,
-                illum_func=illum_func,
-                plim=plim,
-                save=True,
-                angle=apu.deg
-                )
-
-            plt.close('all')
-"""
  #   final_time = np.round((time.time() - start_time) / 60, 2)
  #   print(f'\n ***** PYOOF FIT COMPLETED AT {final_time} mins *****\n')
 

@@ -7,7 +7,11 @@ from scipy import interpolate
 from astropy import units as apu
 
 __all__ = ['cart2pol', 'co_matrices', 'line_equation', 'rms', 'norm', 'snr']
+def norm_min_max(P, Pmin, Pmax, axis = None):
+    P_norm = (P - P.min(axis).reshape(-1, 1)) / (
+        P.max(axis) - P.min(axis)).reshape(-1, 1)
 
+    return np.nan_to_num(P_norm)
 
 def norm(P, axis=None):
     """
@@ -187,6 +191,7 @@ def snr(
     """
 
     if beam_data.ndim == 1:
+        print("snr dim 1")
         u_ng = np.linspace(u_data.min(), u_data.max(), 300)
         v_ng = np.linspace(v_data.min(), v_data.max(), 300)
 
@@ -204,9 +209,11 @@ def snr(
         std = np.nanstd(
             beam_ng[(uu - centre) ** 2 + (vv - centre) ** 2 < radius ** 2]
             )
+        print("std: {}".format(std))
         snr = np.nanmax(beam_ng) / std
 
     else:
+        print("snr dim not 1")
         uu, vv = np.meshgrid(u_data, v_data)
         std = np.nanstd(
             beam_data[(uu - centre) ** 2 + (vv - centre) ** 2 < radius ** 2]

@@ -18,7 +18,7 @@ from .math_functions import norm
 
 __all__ = [
     'plot_beam', 'plot_beam_data', 'plot_phase', 'plot_phase_data',
-    'plot_variance', 'plot_fit_path', "plot_beam_data_multifrequency"
+    'plot_variance', 'plot_fit_path', "plot_beam_data_multifrequency", "plot_phase_difference"
     ]
 
 
@@ -90,10 +90,10 @@ def plot_beam(
         different offset :math:`d_z` value. From left to right, :math:`d_z^-`,
         :math:`0` and :math:`d_z^+`.
     """
-
     power_norm = np.zeros((d_z.size, resolution, resolution), dtype=np.float64)
     u = np.zeros((d_z.size, resolution), dtype=np.float64) << apu.rad
     v = np.zeros((d_z.size, resolution), dtype=np.float64) << apu.rad
+    n_maps = len(d_z)
     for k, _d_z in enumerate(d_z):
 
         u[k, :], v[k, :], F = radiation_pattern(
@@ -117,6 +117,7 @@ def plot_beam(
 
         # Finding central point for shifted maps
         uu, vv = np.meshgrid(u[1, :], v[1, :])
+        print(uu[power_norm[1, ...] == power_norm[1, ...].max()][0])
         u_offset = uu[power_norm[1, ...] == power_norm[1, ...].max()][0]
         v_offset = vv[power_norm[1, ...] == power_norm[1, ...].max()][0]
 
@@ -126,33 +127,30 @@ def plot_beam(
             (-s_bw + v_offset).to_value(apu.rad),
             (s_bw + v_offset).to_value(apu.rad)
             ] * apu.rad
-
     plim = plim.to_value(angle)
     plim_u, plim_v = plim[:2], plim[2:]
 
     subtitle = [
         '$P_{\\textrm{\\scriptsize{norm}}}(u,v)$ $d_z=' +
-        str(round(d_z[i].to_value(apu.cm), 3)) + '$ cm' for i in range(3)
+        str(round(d_z[i].to_value(apu.cm), 3)) + '$ cm' for i in range(n_maps)
         ]
 
     fig = plt.figure(figsize=uv_ratio(plim_u, plim_v), constrained_layout=True)
     gs = GridSpec(
         nrows=2,
-        ncols=3,
+        ncols=n_maps,
         figure=fig,
-        width_ratios=[1] * 3,
-        height_ratios=[1, 0.03],
-        wspace=0.03
         )
-    ax = [plt.subplot(gs[i]) for i in range(6)]
 
-    ax[1].set_yticklabels([])
-    ax[2].set_yticklabels([])
-    ax[0].set_ylabel(f'$v$ {angle}')
 
-    cax = [ax[i + 3] for i in range(3)]
+    ax = [plt.subplot(gs[i]) for i in range(2*n_maps)]
 
-    for i in range(3):
+    #for i in range(n_maps):
+    #    ax[i].set_yticklabels([])
+
+    cax = [ax[i + n_maps] for i in range(n_maps)]
+
+    for i in range(n_maps):
         vmin, vmax = power_norm[i, ...].min(), power_norm[i, ...].max()
 
         extent = [
@@ -179,7 +177,7 @@ def plot_beam(
 
         ax[i].set_title(subtitle[i])
         ax[i].set_xlabel(f'$u$ {angle}')
-
+        ax[i].set_ylabel(f'$v$ {angle}')
         # limits don't work with astropy units
         ax[i].set_ylim(*plim_v)
         ax[i].set_xlim(*plim_u)
@@ -210,6 +208,7 @@ def plot_beam_data_multifrequency(data, resolution, angle, title, res_mode):
             figs.append(fig)
 
     return figs
+
 def plot_beam_data(
     u_data, v_data, beam_data, d_z, resolution, angle, title, res_mode
         ):
@@ -259,38 +258,33 @@ def plot_beam_data(
         offset :math:`d_z` value. From left to right, :math:`d_z^-`, :math:`0`
         and :math:`d_z^+`.
     """
-
+    n_maps = len(d_z)
     if not res_mode:
         # Power pattern normalization
         beam_data = norm(beam_data, axis=1)
 
     subtitle = [
         '$P_{\\textrm{\\scriptsize{norm}}}(u,v)$ $d_z=' +
-        str(round(d_z[i].to_value(apu.cm), 3)) + '$ cm' for i in range(3)
+        str(round(d_z[i].to_value(apu.cm), 3)) + '$ cm' for i in range(n_maps)
         ]
-
     fig = plt.figure(
-        figsize=uv_ratio(u_data[0], v_data[0]),
+        figsize=uv_ratio(u_data, v_data),
         constrained_layout=True
         )
 
     gs = GridSpec(
         nrows=2,
-        ncols=3,
+        ncols=n_maps,
         figure=fig,
-        width_ratios=[1] * 3,
-        height_ratios=[1, 0.03],
-        wspace=0.03
         )
-    ax = [plt.subplot(gs[i]) for i in range(6)]
 
-    ax[1].set_yticklabels([])
-    ax[2].set_yticklabels([])
-    ax[0].set_ylabel(f'$v$ {angle}')
+    ax = [plt.subplot(gs[i]) for i in range(n_maps*2)]
+    for i in range(n_maps):
+        ax[i].set_yticklabels([])
 
-    cax = [ax[i + 3] for i in range(3)]
+    cax = [ax[i + n_maps] for i in range(n_maps)]
 
-    for i in range(3):
+    for i in range(n_maps):
         # new grid for beam_data
         u_ng = np.linspace(
             u_data[i, :].to(angle).min(),
@@ -302,7 +296,6 @@ def plot_beam_data(
             v_data[i, :].to(angle).max(),
             resolution
             )
-
         beam_ng = interpolate.griddata(
             # coordinates of grid points to interpolate from.
             points=(u_data[i, :].to(angle), v_data[i, :].to(angle)),
@@ -344,8 +337,68 @@ def plot_beam_data(
 
     return fig
 
+def plot_phase_difference(K1, K2, pr, piston, tilt, title, wavel):
+    if (not tilt) and (not piston):
+        cbartitle = ' '.join((
+            '$\\varphi_{\\scriptsize{\\textrm{no-piston, no-tilt}}}(x,y)$',
+            'amplitude rad'
+            ))
+    elif (not tilt) and piston:
+        cbartitle = (
+            '$\\varphi_{\\scriptsize{\\textrm{no-tilt}}}(x,y)$ amplitude rad'
+            )
+    elif tilt and (not piston):
+        cbartitle = (
+            '$\\varphi_{\\scriptsize{\\textrm{no-piston}}}(x,y)$ amplitude rad'
+            )
+    else:
+        cbartitle = '$\\varphi(x, y)$ amplitude rad'
 
-def plot_phase(K_coeff, pr, piston, tilt, title):
+    extent = [-pr.to_value(apu.m), pr.to_value(apu.m)] * 2
+    _x1, _y1, _phase1 = phase(K_coeff=K1, pr=pr, tilt=tilt, piston=piston, wavel=wavel)
+    _x2, _y2, _phase2 = phase(K_coeff=K2, pr=pr, tilt=tilt, piston=piston, wavel=wavel)
+    print(_phase1)
+    print(_phase2)
+    _phase = _phase2-_phase1
+    levels = np.arange(floor(_phase.min().value), ceil(_phase.max().value), 0.2)  # radians
+    #levels = np.linspace(floor(_phase.min().value), ceil(_phase.max().value), 10)
+    fig, ax = plt.subplots(figsize=(6, 5.8))
+
+    im = ax.imshow(X=_phase.to_value(apu.rad), extent=extent)
+
+    # Partial solution for contour Warning
+    with warnings.catch_warnings():
+        countour = ax.contour(
+            _x1.to_value(apu.m),
+            _y1.to_value(apu.m),
+            _phase.to_value(apu.rad),
+            levels=levels,
+            colors=["white"],
+            alpha=0,
+            )
+
+    divider = make_axes_locatable(ax)
+    cax = divider.append_axes("right", size="3%", pad=0.03)
+    cb = fig.colorbar(im, cax=cax)
+    cb.ax.set_ylabel(cbartitle)
+    plt.clabel(countour, inline=True, fontsize=15, colors = "white")
+
+    ax.set_title(title)
+    ax.set_ylabel('$y$ m')
+    ax.set_xlabel('$x$ m')
+    ax.grid(False)
+
+    #fig.tight_layout()
+
+    return fig, _phase
+
+from pyoof.aperture import phase
+import matplotlib.pyplot as plt
+import warnings
+from mpl_toolkits.axes_grid1 import make_axes_locatable
+from math import ceil, floor
+
+def plot_phase(K_coeff, pr, piston, tilt, title, wavel):
     """
     Aperture phase distribution (phase-error), :math:`\\varphi(x, y)`, figure,
     given the Zernike circle polynomial coefficients, ``K_coeff``, solution
@@ -394,38 +447,37 @@ def plot_phase(K_coeff, pr, piston, tilt, title):
             )
     else:
         cbartitle = '$\\varphi(x, y)$ amplitude rad'
-
+    
     extent = [-pr.to_value(apu.m), pr.to_value(apu.m)] * 2
-    levels = np.linspace(-2, 2, 9)  # radians
-    _x, _y, _phase = phase(K_coeff=K_coeff, pr=pr, tilt=tilt, piston=piston)
-
+    _x, _y, _phase = phase(K_coeff=K_coeff, pr=pr, tilt=tilt, piston=piston, wavel = wavel)
+    levels = np.arange(floor(_phase.min().value), ceil(_phase.max().value), 0.2)  # radians
+    #levels = np.linspace(floor(_phase.min().value), ceil(_phase.max().value), 4)
     fig, ax = plt.subplots(figsize=(6, 5.8))
-
     im = ax.imshow(X=_phase.to_value(apu.rad), extent=extent)
-
     # Partial solution for contour Warning
+    #with warnings.catch_warnings():
+    #    warnings.simplefilter("ignore")
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        ax.contour(
-            _x.to_value(apu.m),
-            _y.to_value(apu.m),
-            _phase.to_value(apu.rad),
-            levels=levels,
-            colors='k',
-            alpha=0.3
-            )
-
+        countour = ax.contour(
+                _x.to_value(apu.m),
+                _y.to_value(apu.m),
+                _phase.to_value(apu.rad),
+                levels=levels,
+                colors=["white"],
+                alpha=0,
+                )
     divider = make_axes_locatable(ax)
     cax = divider.append_axes("right", size="3%", pad=0.03)
     cb = fig.colorbar(im, cax=cax)
     cb.ax.set_ylabel(cbartitle)
-
+    plt.clabel(countour, inline=True, fontsize=15, colors = "white")
     ax.set_title(title)
     ax.set_ylabel('$y$ m')
     ax.set_xlabel('$x$ m')
     ax.grid(False)
 
-    fig.tight_layout()
+    #fig.tight_layout()
 
     return fig
 
@@ -452,7 +504,6 @@ def plot_phase_data(phase_data, pr, title):
         Aperture phase distribution represented for the telescope's primary
         reflector.
     """
-
     _x = np.linspace(-pr, pr, phase_data.shape[0])
     _y = np.linspace(-pr, pr, phase_data.shape[0])
 
@@ -486,7 +537,7 @@ def plot_phase_data(phase_data, pr, title):
     ax.set_xlabel('$x$ m')
     ax.grid(False)
 
-    fig.tight_layout()
+    #fig.tight_layout()
 
     return fig
 
@@ -585,14 +636,15 @@ def plot_variance(matrix, order, diag, cbtitle, title):
     ax.set_yticklabels(labels_y)
     ax.grid(False)
 
-    fig.tight_layout()
+    #fig.tight_layout()
 
     return fig
-
+#def plot_fit_path_multifreq(path_pyoof_out, order, illum_func, telgeo, angle='deg', plim=None,
+#    save=False):
 
 def plot_fit_path(
-    path_pyoof_out, order, illum_func, telgeo, angle='deg', plim=None,
-    save=False
+    path_pyoof_out, order, illum_func, telgeo,wavel,  angle='deg', plim=None,
+    save=False, i=0
         ):
     """
     Plot all important figures after a least squares minimization.
@@ -653,7 +705,7 @@ def plot_fit_path(
         pass
 
     path_plot = os.path.join(path_pyoof_out, 'plots')
-
+    print(path_plot)
     if not os.path.exists(path_plot):
         os.makedirs(path_plot)
 
@@ -672,23 +724,21 @@ def plot_fit_path(
     box_factor = pyoof_info['box_factor']
 
     # Beam and residual
-    beam_data = np.genfromtxt(os.path.join(path_pyoof_out, 'beam_data.csv'))
-    res = np.genfromtxt(os.path.join(path_pyoof_out, f'res_n{n}.csv'))
-
+    beam_data = np.genfromtxt(os.path.join(path_pyoof_out, f'beam_data_{wavel}.csv'))
+    res = np.genfromtxt(os.path.join(path_pyoof_out, f'res_n{n}_{wavel}.csv'))
     u_data = np.genfromtxt(
-        os.path.join(path_pyoof_out, 'u_data.csv')) * apu.rad
+        os.path.join(path_pyoof_out, f'u_data_{wavel}.csv')) * apu.rad
     v_data = np.genfromtxt(
-        os.path.join(path_pyoof_out, 'v_data.csv')) * apu.rad
-
-    wavel = pyoof_info['wavel'] * apu.m
+        os.path.join(path_pyoof_out, f'v_data_{wavel}.csv')) * apu.rad
     d_z = np.array(pyoof_info['d_z']) * apu.m
     pr = pyoof_info['pr'] * apu.m
 
-    K_coeff = params['parfit'][5:]
-
+    K_coeff = params['parfit'][5:]*apu.m
+    #for u_data, v_data, beam_data in zip(u_data_array, v_data_array,beam_data_array):
     # Covariance and Correlation matrix
-    cov = np.genfromtxt(os.path.join(path_pyoof_out, f'cov_n{n}.csv'))
-    corr = np.genfromtxt(os.path.join(path_pyoof_out, f'corr_n{n}.csv'))
+    cov = np.genfromtxt(os.path.join(path_pyoof_out, f'cov_n{n}_{wavel}.csv'))
+    corr = np.genfromtxt(os.path.join(path_pyoof_out, f'corr_n{n}_{wavel}.csv'))
+    wavel = pyoof_info['wavel'] * apu.m
 
     if n == 1:
         fig_data = plot_beam_data(
@@ -697,8 +747,7 @@ def plot_fit_path(
             beam_data=beam_data,
             d_z=d_z,
             resolution=resolution,
-            title='{} observed power pattern $\\alpha={}$ deg'.format(
-                obs_object, meanel),
+            title='observed power pattern',
             angle=angle,
             res_mode=False
             )
@@ -706,9 +755,7 @@ def plot_fit_path(
     fig_beam = plot_beam(
         I_coeff=params['parfit'][:5],
         K_coeff=K_coeff,
-        title='{} fit power pattern  $n={}$ $\\alpha={}$ degrees'.format(
-            obs_object, n, meanel
-            ),
+        title='fit power patter',
         d_z=d_z,
         wavel=wavel,
         illum_func=illum_func,
@@ -721,47 +768,47 @@ def plot_fit_path(
 
     fig_phase = plot_phase(
         K_coeff=K_coeff,
-        title=(
-            '{} phase-error $d_z=\\pm {}$ cm $n={}$ $\\alpha={}$ deg'
-            ).format(obs_object, round(d_z[2].to_value(apu.cm), 3), n, meanel),
+        title='phase-error',
         pr=pr,
         piston=False,
-        tilt=False
+        tilt=False,
+        wavel = wavel
         )
-
     fig_res = plot_beam_data(
         u_data=u_data,
         v_data=v_data,
         beam_data=res,
         d_z=d_z,
         resolution=resolution,
-        title='{} residual $n={}$'.format(obs_object, n),
+        title='residual',
         angle=angle,
         res_mode=True
         )
 
+    if save:
+        fig_beam.savefig(os.path.join(path_plot, f'fitbeam_n{n}_{i}.png'))
+        fig_phase.savefig(os.path.join(path_plot, f'fitphase_n{n}_{i}.png'))
+        fig_res.savefig(os.path.join(path_plot, f'residual_n{n}_{i}.png'))
+#       fig_cov.savefig(os.path.join(path_plot, f'cov_n{n}_{i}.png'))
+#        fig_corr.savefig(os.path.join(path_plot, f'corr_n{n}_{i}.png'))
+
+        if n == 1:
+            fig_data.savefig(os.path.join(path_plot, f'obsbeam_{i}.png'))
+
+            """
     fig_cov = plot_variance(
         matrix=cov,
         order=n,
-        title='{} variance-covariance matrix $n={}$'.format(obs_object, n),
-        cbtitle='$\\sigma_{ij}^2$',
+        title='variance-covariance matrix',
+        cbtitle='sigma',
         diag=True,
         )
 
     fig_corr = plot_variance(
         matrix=corr,
         order=n,
-        title='{} correlation matrix $n={}$'.format(obs_object, n),
-        cbtitle='$\\rho_{ij}$',
+        title='correlation matrix',
+        cbtitle='rho',
         diag=True,
         )
-
-    if save:
-        fig_beam.savefig(os.path.join(path_plot, f'fitbeam_n{n}.pdf'))
-        fig_phase.savefig(os.path.join(path_plot, f'fitphase_n{n}.pdf'))
-        fig_res.savefig(os.path.join(path_plot, f'residual_n{n}.pdf'))
-        fig_cov.savefig(os.path.join(path_plot, f'cov_n{n}.pdf'))
-        fig_corr.savefig(os.path.join(path_plot, f'corr_n{n}.pdf'))
-
-        if n == 1:
-            fig_data.savefig(os.path.join(path_plot, 'obsbeam.pdf'))
+"""

@@ -17,6 +17,7 @@ __all__ = [
     "extract_data_multifrequency", 'extract_data_pyoof', 'extract_data_effelsberg', 'str2LaTeX',
     'store_data_csv', 'uv_ratio', 'store_data_ascii', 'table_pyoof_out'
     ]
+
 def extract_data_multifrequency(fits_paths):
     data_dict = {}
     for fits_path  in fits_paths:
@@ -86,7 +87,7 @@ def extract_data_pyoof(pathfits):
 
     if not all(
             k in hdulist[0].header
-            for k in ['FREQ', 'WAVEL', 'MEANEL', 'OBJECT', 'DATE_OBS']
+            for k in ['FREQ', 'WAVEL', 'MEANEL', 'OBJECT', 'DATE_OBS', "NMAPS"]
             ):
         raise ValueError('Not all needed keys found in FITS header.')
 
@@ -95,11 +96,13 @@ def extract_data_pyoof(pathfits):
     meanel = hdulist[0].header['MEANEL'] * apu.deg
     obs_object = hdulist[0].header['OBJECT']
     obs_date = hdulist[0].header['DATE_OBS']
-
-    beam_data = np.array([hdulist[i].data['BEAM'] for i in range(1, 4)])
-    u_data = np.array([hdulist[i].data['U'] for i in range(1, 4)]) * apu.rad
-    v_data = np.array([hdulist[i].data['V'] for i in range(1, 4)]) * apu.rad
-    d_z = np.array([hdulist[i].header['DZ'] for i in range(1, 4)]) * apu.m
+    n_maps = hdulist[0].header['NMAPS']
+    noise = hdulist[0].header['NOISE']
+    beam_data = np.array([hdulist[i].data['BEAM'] for i in range(1,n_maps+1)])
+    power = np.array([hdulist[i].data['POWER'] for i in range(1,n_maps+1)])
+    u_data = np.array([hdulist[i].data['U'] for i in range(1,n_maps+1)]) * apu.rad
+    v_data = np.array([hdulist[i].data['V'] for i in range(1,n_maps+1)]) * apu.rad
+    d_z = np.array([hdulist[i].header['DZ'] for i in range(1,n_maps+1)]) * apu.m
 
     data_file = [name, pthto]
     data_info = data_file + [obs_object, obs_date, freq, wavel, d_z, meanel]
@@ -111,11 +114,14 @@ def extract_data_pyoof(pathfits):
             "obs_date": obs_date, 
             "freq": freq, 
             "wavel": wavel, 
-            "d_z": d_z, 
+            "d_z": d_z,
+            "NMAPS":n_maps, 
             "meanel": meanel,
             "beam_data": beam_data,
             "u_data": u_data,
-            "v_data": v_data}
+            "v_data": v_data,
+            'power': power,
+            'noise': noise}
 
     return data
 
@@ -224,7 +230,7 @@ def str2LaTeX(python_string):
     return LaTeX_string
 
 
-def store_data_csv(name, name_dir, order, save_to_csv):
+def store_data_csv(name, name_dir, order, wavel, save_to_csv):
     """
     Stores all important information in a CSV file after the least squares
     minimization has finished, `~pyoof.fit_zpoly`. All data will be stored in
@@ -255,10 +261,10 @@ def store_data_csv(name, name_dir, order, save_to_csv):
         ]
 
     fnames = [
-        f'beam_data.csv', f'u_data.csv', f'v_data.csv',
-        f'res_n{order}.csv', f'jac_n{order}.csv',
-        f'grad_n{order}.csv', f'phase_n{order}.csv',
-        f'cov_n{order}.csv', f'corr_n{order}.csv'
+        f'beam_data_{wavel}.csv', f'u_data_{wavel}.csv', f'v_data_{wavel}.csv',
+        f'res_n{order}_{wavel}.csv', f'jac_n{order}_{wavel}.csv',
+        f'grad_n{order}_{wavel}.csv', f'phase_n{order}_{wavel}.csv',
+        f'cov_n{order}_{wavel}.csv', f'corr_n{order}_{wavel}.csv'
         ]
 
     if order != 1:
@@ -266,10 +272,7 @@ def store_data_csv(name, name_dir, order, save_to_csv):
         fnames = fnames[3:]
         save_to_csv = save_to_csv[3:]
     for fname, header, file in zip(fnames, headers, save_to_csv):
-        print(fname)
-        print(name_dir)
         name_dir = name_dir.replace("//", "/")
-        print(os.path.join(name_dir, fname))
         np.savetxt(
             fname=os.path.join(name_dir, fname),
             X=file,
@@ -346,13 +349,11 @@ def uv_ratio(u, v):
     """
 
     ratio = (u.max() - u.min()) / (v.max() - v.min())
-
     if type(ratio) == apu.Quantity:
         ratio = ratio.decompose().value
 
     height = 5
     width = (ratio * 2.25 * height)
-
     return width, height
 
 

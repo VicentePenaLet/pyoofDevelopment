@@ -16,7 +16,6 @@ def simulate_data_pyoof_multifreq( I_coeff, K_coeff, wavel_array, d_z, illum_fun
     box_factor, work_dir=None):
     if work_dir is None:
         work_dir = os.getcwd()
-
     fits_files = []
     fits_paths = []
     for wavel in wavel_array:
@@ -26,9 +25,10 @@ def simulate_data_pyoof_multifreq( I_coeff, K_coeff, wavel_array, d_z, illum_fun
         fits_paths.append(name_file)
     return fits_files, fits_paths
 
+
 def simulate_data_pyoof(
     I_coeff, K_coeff, wavel, d_z, illum_func, telgeo, noise, resolution,
-    box_factor, work_dir=None, fits_name = "test"
+    box_factor, work_dir=None, fits_name = "test", overwrite = True
         ):
     """
     Routine to generate data and test the pyoof package algorithm. It has the
@@ -96,12 +96,12 @@ def simulate_data_pyoof(
         If the known a priori radial offset ``d_z`` is different than:
         ``[d_z-, 0., d_z+]``, negative, zero, and positive float.
     """
-    print("development build")
+    print("simulation wavel: {}".format(wavel))
 
-    if (d_z[0] > 0) or (d_z[1] != 0) or (d_z[2] < 0):
-        raise ValueError(
-            "Radial offset must match: [d_z-, 0., d_z+] convention"
-            )
+    #if (d_z[0] > 0) or (d_z[1] != 0) or (d_z[2] < 0):
+    #    raise ValueError(
+    #        "Radial offset must match: [d_z-, 0., d_z+] convention"
+    #        )
 
     if work_dir is None:
         work_dir = os.getcwd()
@@ -118,7 +118,7 @@ def simulate_data_pyoof(
 
     # Generating power pattern and spatial frequencies
     u, v, P = [], [], []
-    for i in range(3):
+    for i in range(len(d_z)):
         _u, _v, _radiation = radiation_pattern(
             K_coeff=K_coeff,
             I_coeff=I_coeff,
@@ -142,7 +142,7 @@ def simulate_data_pyoof(
         power_trim_1d = power_pattern[~np.isnan(power_pattern)]
         size_trim = int(np.sqrt(power_trim_1d.size))  # new size of the box
 
-
+ 
         # Box to be trimmed in uu and vv meshed arrays
         box = (
             (plim_u[0] < uu) & (plim_u[1] > uu) &
@@ -153,7 +153,6 @@ def simulate_data_pyoof(
         power_trim = power_trim_1d.reshape(size_trim, size_trim)
         u_trim = uu[box].reshape(size_trim, size_trim)
         v_trim = vv[box].reshape(size_trim, size_trim)
-
         u.append(u_trim)
         v.append(v_trim)
         P.append(power_trim)
@@ -167,28 +166,39 @@ def simulate_data_pyoof(
             np.random.normal(0., noise, np.array(P).shape)
             )
 
-    u_to_save = [u[i].to_value(apu.rad).flatten() for i in range(3)]
-    v_to_save = [v[i].to_value(apu.rad).flatten() for i in range(3)]
-    p_to_save = [power_noise[i].flatten() for i in range(3)]
+    u_to_save = [u[i].to_value(apu.rad).flatten() for i in range(len(d_z))]
+    v_to_save = [v[i].to_value(apu.rad).flatten() for i in range(len(d_z))]
+    p_to_save = [power_noise[i].flatten() for i in range(len(d_z))]
+    p_no_noise_to_save = [P[i].flatten() for i in range(len(d_z))]
 
     # Writing default fits file for OOF observations
-    table_hdu0 = fits.BinTableHDU.from_columns([
-        fits.Column(name='U', format='E', array=u_to_save[0]),
-        fits.Column(name='V', format='E', array=v_to_save[0]),
-        fits.Column(name='BEAM', format='E', array=p_to_save[0])
+    hdu_tables = []
+    for i in range(len(d_z)):
+        table_hdu = fits.BinTableHDU.from_columns([
+        fits.Column(name='U', format='E', array=u_to_save[i]),
+        fits.Column(name='V', format='E', array=v_to_save[i]),
+        fits.Column(name='BEAM', format='E', array=p_to_save[i]),
+        fits.Column(name = 'POWER', format ='E', array=p_no_noise_to_save[i])
         ])
+        hdu_tables.append(table_hdu)
 
-    table_hdu1 = fits.BinTableHDU.from_columns([
-        fits.Column(name='U', format='E', array=u_to_save[1]),
-        fits.Column(name='V', format='E', array=v_to_save[1]),
-        fits.Column(name='BEAM', format='E', array=p_to_save[1])
-        ])
+    #table_hdu0 = fits.BinTableHDU.from_columns([
+    #    fits.Column(name='U', format='E', array=u_to_save[0]),
+    #    fits.Column(name='V', format='E', array=v_to_save[0]),
+    #    fits.Column(name='BEAM', format='E', array=p_to_save[0])
+    #    ])
 
-    table_hdu2 = fits.BinTableHDU.from_columns([
-        fits.Column(name='U', format='E', array=u_to_save[2]),
-        fits.Column(name='V', format='E', array=v_to_save[2]),
-        fits.Column(name='BEAM', format='E', array=p_to_save[2])
-        ])
+    #table_hdu1 = fits.BinTableHDU.from_columns([
+    #    fits.Column(name='U', format='E', array=u_to_save[1]),
+    #    fits.Column(name='V', format='E', array=v_to_save[1]),
+    #    fits.Column(name='BEAM', format='E', array=p_to_save[1])
+    #    ])
+
+    #table_hdu2 = fits.BinTableHDU.from_columns([
+    #    fits.Column(name='U', format='E', array=u_to_save[2]),
+    #    fits.Column(name='V', format='E', array=v_to_save[2]),
+    #    fits.Column(name='BEAM', format='E', array=p_to_save[2])
+    #    ])
 
     # storing data
     if not os.path.exists(os.path.join(work_dir, 'data_generated')):
@@ -204,18 +214,18 @@ def simulate_data_pyoof(
     prihdr['DATE_OBS'] = Time.now().isot
     prihdr['COMMENT'] = 'Generated data pyoof package'
     prihdr['AUTHOR'] = 'Tomas Cassanelli'
+    prihdr['NMAPS'] = len(d_z)
+    prihdr['NOISE'] = noise
     prihdu = fits.PrimaryHDU(header=prihdr)
+
     pyoof_fits = fits.HDUList(
-        [prihdu, table_hdu0, table_hdu1, table_hdu2]
+        [prihdu] + hdu_tables
         )
-
-    for i in range(3):
-        pyoof_fits[i + 1].header['DZ'] = d_z[i].to_value(apu.m)
-
-    pyoof_fits[1].name = 'MINUS OOF'
-    pyoof_fits[2].name = 'ZERO OOF'
-    pyoof_fits[3].name = 'PLUS OOF'
-
-    pyoof_fits.writeto(name_file)
+    #print("aaaaaaaaaaaa")
+    for i in range(1, len(d_z)+1):
+        #print("i:{},    d_z[i]:{}".format(i, d_z[i-1].to_value(apu.m)))
+        pyoof_fits[i].header['DZ'] = d_z[i-1].to_value(apu.m)
+        pyoof_fits[i].name = 'MINUS OOF'
+    pyoof_fits.writeto(name_file, overwrite = overwrite)
 
     return pyoof_fits

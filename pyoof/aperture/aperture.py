@@ -200,7 +200,7 @@ def illum_gauss(x, y, I_coeff, pr):
     return Ea
 
 
-def wavefront(rho, theta, K_coeff):
+def wavefront(rho, theta, K_coeff, wavel):
     """
     Computes the wavefront (aberration) distribution, :math:`W(x, y)`. It
     tells how the error is distributed along the primary reflector ``pr``, it
@@ -248,12 +248,11 @@ def wavefront(rho, theta, K_coeff):
     W = sum(
         K_coeff[i] * U(*nl[i], rho, theta)
         for i in range(K_coeff.size)
-        ).value
+        )
+    return W/wavel
 
-    return W
 
-
-def phase(K_coeff, pr, piston, tilt, resolution=1000):
+def phase(K_coeff, pr, piston, tilt, wavel, resolution=1000):
     """
     Aperture phase distribution (or phase-error), :math:`\\varphi(x, y)`, for
     an specific telescope primary reflector. In general, the tilt (average
@@ -340,10 +339,10 @@ def phase(K_coeff, pr, piston, tilt, resolution=1000):
     r_norm = r / pr       # For orthogonality U(n, l) polynomials
 
     # Wavefront (aberration) distribution
-    W = wavefront(rho=r_norm, theta=t, K_coeff=_K_coeff)
+    W = wavefront(rho=r_norm, theta=t, K_coeff=_K_coeff, wavel = wavel)
     W[(x_grid ** 2 + y_grid ** 2 > pr ** 2)] = 0
 
-    phi = W * 2 * np.pi * apu.rad  # Aperture phase distribution in radians
+    phi = W * 2 * np.pi *apu.rad   # Aperture phase distribution in radians
 
     return x, y, phi
 
@@ -422,7 +421,7 @@ def aperture(x, y, I_coeff, K_coeff, d_z, wavel, illum_func, telgeo):
     r_norm = r / pr
 
     # Wavefront (aberration) distribution
-    W = wavefront(rho=r_norm, theta=t, K_coeff=K_coeff)
+    W = wavefront(rho=r_norm, theta=t, K_coeff=K_coeff, wavel=wavel)
     delta = opd_func(x=x, y=y, d_z=d_z)  # Optical path difference function
     Ea = illum_func(x=x, y=y, I_coeff=I_coeff, pr=pr)  # Illumination function
 
@@ -432,7 +431,6 @@ def aperture(x, y, I_coeff, K_coeff, d_z, wavel, illum_func, telgeo):
 
     with apu.set_enabled_equivalencies(apu.dimensionless_angles()):
         E = B * Ea * np.exp(phi * 1j)  # Aperture distribution
-
     return E.decompose().value
 
 
